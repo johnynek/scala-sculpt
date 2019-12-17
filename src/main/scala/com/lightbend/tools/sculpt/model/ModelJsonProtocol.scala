@@ -33,23 +33,34 @@ object ModelJsonProtocol extends DefaultJsonProtocol {
   }
 
   implicit object fullDependencyFormat extends JsonFormat[FullDependency] {
+    val usesStr = "uses"
+    val extendsStr = "extends"
+    val declaresStr = "declares"
+
     def write(d: FullDependency) = {
       val data = Seq(
         "sym" -> d.from.toJson,
         (d.kind match {
-          case DependencyKind.Extends => "extends"
-          case DependencyKind.Uses => "uses"
-          case DependencyKind.Declares => "declares"
+          case DependencyKind.Extends => extendsStr
+          case DependencyKind.Uses => usesStr
+          case DependencyKind.Declares => declaresStr
         }) -> d.to.toJson
       )
       JsObject((if(d.count == 1) data else data :+ ("count" -> JsNumber(d.count))): _*)
     }
+
+    def read(m: Map[String, JsValue], str: String, k: DependencyKind): Option[(DependencyKind, Path)] =
+      m.get(str).map { v => (k, v.convertTo[Path]) }
+
     def read(value: JsValue) = {
       val m = value.asJsObject.fields
       val from = m("sym").convertTo[Path]
       val (kind, to) =
-        if(m.contains("uses")) (DependencyKind.Uses, m("uses").convertTo[Path])
-        else (DependencyKind.Extends, m("extends").convertTo[Path])
+        read(m, usesStr, DependencyKind.Uses)
+          .orElse(read(m, extendsStr, DependencyKind.Extends))
+          .orElse(read(m, declaresStr, DependencyKind.Declares))
+          .getOrElse(sys.error(s"expected one of {uses, extends, declares} in ${m.keys}"))
+
       val count = m.get("count").map(_.convertTo[Int]).getOrElse(1)
       FullDependency(from, to, kind, count)
     }
